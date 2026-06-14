@@ -10,7 +10,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.lifecycleScope
 import com.example.parkingpillar.ui.theme.ParkingPillarTheme
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -23,6 +26,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // 앱이 꺼져 있다가 알림 "말하기"로 켜지는 경우: 시작 Intent에서 신호를 읽는다
         handleIntent(intent)
+        // 앱을 처음 켤 때, 알림 설정이 ON일 때만 서비스를 시작한다.
+        // (OFF로 둔 사용자는 앱을 다시 켜도 알림이 뜨지 않아야 하므로 설정을 먼저 확인)
+        lifecycleScope.launch {
+            if (notificationEnabledFlow(applicationContext).first()) {
+                ParkingService.start(applicationContext)
+            }
+        }
         enableEdgeToEdge()
         setContent {
             ParkingPillarTheme {

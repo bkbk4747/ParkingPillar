@@ -3,6 +3,7 @@ package com.example.parkingpillar
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -21,9 +22,13 @@ import kotlinx.coroutines.flow.map
 // ──────────────────────────────────────────────────────────────────────────
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "parking_prefs")
 
-// 저장할 키 — 딱 두 개만 사용 (마지막 위치 텍스트 / 저장 시각)
+// 저장할 키 — 위치 데이터 (마지막 위치 텍스트 / 저장 시각)
 private val KEY_LOCATION_TEXT = stringPreferencesKey("location_text")
 private val KEY_SAVED_AT_MILLIS = longPreferencesKey("saved_at_millis")
+
+// 상태바 알림 표시 on/off 설정 키.
+// 위치 데이터(위 두 키)와 "완전히 별개"다. 이 값을 바꿔도 위치 데이터는 그대로 유지된다.
+private val KEY_NOTIFICATION_ENABLED = booleanPreferencesKey("notification_enabled")
 
 /** 마지막 주차 위치 한 건. 저장된 게 없으면 null로 표현한다. */
 data class LastParking(
@@ -73,4 +78,29 @@ suspend fun saveLastParking(context: Context, text: String): LastParking {
     }
 
     return LastParking(text = trimmedText, savedAtMillis = savedAtMillis)
+}
+
+/**
+ * 상태바 알림 표시 on/off 설정을 구독(읽기)한다.
+ *
+ * 기본값은 true(켜짐) — 설정한 적 없는 사용자는 알림이 켜진 상태로 시작한다.
+ * 이 값은 위치 데이터와 무관하므로, 위치가 저장돼 있든 없든 독립적으로 동작한다.
+ */
+fun notificationEnabledFlow(context: Context): Flow<Boolean> =
+    context.dataStore.data.map { prefs ->
+        // 키가 없으면(처음) null → 기본값 true 사용
+        prefs[KEY_NOTIFICATION_ENABLED] ?: true
+    }
+
+/**
+ * 상태바 알림 표시 on/off 설정을 저장(쓰기)한다.
+ *
+ * 중요: 이 함수는 KEY_NOTIFICATION_ENABLED 하나만 바꾼다.
+ * 위치 데이터(KEY_LOCATION_TEXT / KEY_SAVED_AT_MILLIS)는 전혀 건드리지 않으므로,
+ * 알림을 꺼도(=false) 저장된 마지막 주차 위치는 디스크에 그대로 남는다.
+ */
+suspend fun setNotificationEnabled(context: Context, enabled: Boolean) {
+    context.dataStore.edit { prefs ->
+        prefs[KEY_NOTIFICATION_ENABLED] = enabled
+    }
 }

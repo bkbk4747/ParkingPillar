@@ -28,6 +28,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -124,6 +125,9 @@ private fun VoiceContent(
     // collectAsState: Flow가 새 값을 방출할 때마다 자동으로 재구성(recompose)된다.
     // → 저장하면 즉시 갱신되고, 앱을 다시 켜면 디스크에서 읽어와 복원된다.
     val lastParking by lastParkingFlow(context).collectAsState(initial = null)
+
+    // 상태바 알림 표시 on/off 설정을 구독 (위치 데이터와 무관한 별개 설정)
+    val notificationEnabled by notificationEnabledFlow(context).collectAsState(initial = true)
 
     // 저장(suspend)을 호출하기 위한 코루틴 스코프 (이 컴포저블 생명주기에 묶임)
     val scope = rememberCoroutineScope()
@@ -381,6 +385,38 @@ private fun VoiceContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 8.dp)
+            )
+        }
+
+        // ── 상태바 알림 표시 on/off 토글 ──────────────────────────────────
+        // ON  → 설정 저장(true) 후 서비스 시작 → 저장된 마지막 위치로 알림 복원
+        // OFF → 설정 저장(false) 후 서비스 정지 → 알림만 사라짐(위치 데이터는 그대로)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 24.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = "상태바 알림 표시",
+                style = MaterialTheme.typography.bodyLarge
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Switch(
+                checked = notificationEnabled,
+                onCheckedChange = { enabled ->
+                    scope.launch {
+                        // 1) 설정값을 먼저 저장 (앱 재실행/부팅 후에도 선택 유지)
+                        setNotificationEnabled(context, enabled)
+                        // 2) 설정에 맞춰 서비스 시작/정지 (위치 데이터는 건드리지 않음)
+                        if (enabled) {
+                            ParkingService.start(context)
+                        } else {
+                            ParkingService.stop(context)
+                        }
+                    }
+                }
             )
         }
     }
