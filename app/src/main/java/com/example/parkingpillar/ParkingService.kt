@@ -12,6 +12,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 
 /**
@@ -94,7 +95,14 @@ class ParkingService : Service() {
                 }
             }
         } else {
-            startForeground(PARKING_NOTIFICATION_ID, buildParkingNotification(this, null))
+            // 일반 시작에서도 null 알림을 먼저 띄우면, 이미 저장된 위치가 있어도
+            // 상태바 알림이 "아직 저장된 주차 위치가 없어요"로 덮일 수 있다.
+            // Foreground Service는 빠르게 startForeground()를 호출해야 하므로,
+            // 현재 DataStore의 마지막 위치를 즉시 읽어 실제 최신 값으로 첫 알림을 만든다.
+            val last = runBlocking(Dispatchers.IO) {
+                lastParkingFlow(applicationContext).first()
+            }
+            startForeground(PARKING_NOTIFICATION_ID, buildParkingNotification(this, last))
         }
 
         // 2) DataStore의 마지막 위치를 "한 번만" 구독 → 값이 바뀔 때마다 알림을 갱신.

@@ -9,6 +9,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.text.format.DateFormat as AndroidDateFormat
+import android.view.View
+import android.widget.RemoteViews
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.core.app.NotificationManagerCompat
@@ -73,6 +76,12 @@ fun buildParkingNotification(context: Context, last: LastParking?): Notification
     } else {
         "아직 저장된 주차 위치가 없어요"
     }
+    val compactLocationText = last?.let {
+        "🅿️ ${it.text}"
+    } ?: "🅿️ 아직 저장된 주차 위치가 없어요"
+    val compactTimeText = last?.let {
+        formatParkingNotificationTime(context, it.savedAtMillis)
+    }
 
     // 3) "말하기" 버튼을 눌렀을 때 실행할 PendingIntent 준비
     //
@@ -135,6 +144,29 @@ fun buildParkingNotification(context: Context, last: LastParking?): Notification
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
     )
 
+    // 커스텀 collapsed 알림 실험:
+    // 색상과 배경을 직접 지정하지 않고 Notification Compat TextAppearance를 사용해서
+    // 다크모드/라이트모드에서 시스템 알림 배경과 최대한 자연스럽게 맞춘다.
+    // "기록"은 Button 대신 짧은 TextView CTA로 두어 접힌 알림 높이 제한에서 잘릴 위험을 줄인다.
+    // 표준 addAction은 아래에 그대로 남겨, 커스텀 뷰가 기기 정책상 기대처럼 보이지 않아도
+    // 펼친 알림에서는 기존 "주차 위치 기록" 액션을 계속 사용할 수 있게 한다.
+    val compactRemoteViews = RemoteViews(
+        context.packageName,
+        R.layout.notification_parking_compact
+    ).apply {
+        setTextViewText(R.id.notification_location, compactLocationText)
+        if (compactTimeText == null) {
+            setViewVisibility(R.id.notification_time, View.GONE)
+        } else {
+            setViewVisibility(R.id.notification_time, View.VISIBLE)
+            setTextViewText(R.id.notification_time, compactTimeText)
+        }
+        setTextViewText(R.id.notification_record, "🎙\n기록")
+        setOnClickPendingIntent(R.id.notification_root, contentPendingIntent)
+        setOnClickPendingIntent(R.id.notification_record_area, speakPendingIntent)
+        setOnClickPendingIntent(R.id.notification_record, speakPendingIntent)
+    }
+
     // 6) 알림 빌드 — NotificationCompat은 구버전 호환을 알아서 처리해준다
     return NotificationCompat.Builder(context, CHANNEL_ID)
         // 알림 본체를 탭하면 앱(MainActivity)을 연다
@@ -142,10 +174,10 @@ fun buildParkingNotification(context: Context, last: LastParking?): Notification
         // 알림이 지워지면 위 PendingIntent가 발사되어 서비스가 알림을 다시 띄운다
         .setDeleteIntent(deletePendingIntent)
         .setSmallIcon(R.mipmap.ic_launcher)      // 상태바 작은 아이콘 (기존 런처 아이콘 재사용)
-        .setContentTitle("🚗 내차기둥")
+        .setContentTitle("주차 위치")
         .setContentText(contentText)
-        // 본문이 길어도 펼쳐 볼 수 있게 BigTextStyle 적용
-        .setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
+        .setCustomContentView(compactRemoteViews)
+        .setStyle(NotificationCompat.DecoratedCustomViewStyle())
         .setPriority(NotificationCompat.PRIORITY_DEFAULT)  // 구버전(채널 없는 기기)용 우선순위
         // 상시 알림: 스와이프로 잘 지워지지 않게(ongoing), 탭해도 자동으로 안 사라지게
         .setOngoing(true)
@@ -189,4 +221,15 @@ fun cancelLastParkingNotification(context: Context) {
 private fun formatNotificationTime(millis: Long): String {
     val formatter = SimpleDateFormat("M월 d일", Locale.KOREAN)
     return formatter.format(Date(millis))
+}
+
+private fun formatParkingNotificationTime(context: Context, savedAtMillis: Long): String {
+    // 사용자의 휴대폰 시간 설정(12시간제/24시간제)에 맞춰 알림에 표시할 저장 시각을 만든다.
+    // 예: 24시간제는 "06/16 14:27 에 주차하셨어요!", 12시간제는 "06/16 오후 2:27 에 주차하셨어요!"로 표시한다.
+    val pattern = if (AndroidDateFormat.is24HourFormat(context)) {
+        "MM/dd HH:mm"
+    } else {
+        "MM/dd a h:mm"
+    }
+    return "${SimpleDateFormat(pattern, Locale.KOREA).format(Date(savedAtMillis))} 에 주차하셨어요!"
 }

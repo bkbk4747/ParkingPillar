@@ -1,6 +1,8 @@
 package com.example.parkingpillar
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Column
@@ -26,6 +28,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.exifinterface.media.ExifInterface
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -138,10 +141,7 @@ private fun ParkingPhoto(
     }
 
     val bitmap = remember(photoPath) {
-        runCatching {
-            val file = File(photoPath)
-            if (!file.isFile) null else BitmapFactory.decodeFile(file.absolutePath)
-        }.getOrNull()
+        loadParkingPhotoBitmap(photoPath)
     }
 
     if (bitmap == null) {
@@ -162,6 +162,45 @@ private fun ParkingPhoto(
         )
     }
 }
+
+private fun loadParkingPhotoBitmap(photoPath: String): Bitmap? =
+    runCatching {
+        val file = File(photoPath)
+        if (!file.isFile) return@runCatching null
+
+        val original = BitmapFactory.decodeFile(file.absolutePath) ?: return@runCatching null
+
+        // CameraX가 저장한 JPEG는 픽셀 자체를 돌리지 않고 EXIF orientation에
+        // 회전 정보를 남길 수 있다. BitmapFactory는 이 값을 자동 반영하지 않으므로,
+        // 상세 화면에서 보여줄 때만 필요한 만큼 회전해서 사용한다.
+        val orientation = runCatching {
+            ExifInterface(file.absolutePath).getAttributeInt(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL
+            )
+        }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
+
+        val degrees = when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+            ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+            ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+            else -> 0f
+        }
+
+        if (degrees == 0f) {
+            original
+        } else {
+            Bitmap.createBitmap(
+                original,
+                0,
+                0,
+                original.width,
+                original.height,
+                Matrix().apply { postRotate(degrees) },
+                true
+            )
+        }
+    }.getOrNull()
 
 private fun formatDetailSavedAt(millis: Long): String {
     val formatter = SimpleDateFormat("M월 d일 a h:mm", Locale.KOREAN)
