@@ -56,6 +56,7 @@ class ParkingService : Service() {
         //    START_NOT_STICKY를 반환해 시스템이 다시 살리지 않게 한다. (위치 데이터는 안 건드림)
         if (intent?.action == ACTION_STOP) {
             stopForeground(STOP_FOREGROUND_REMOVE)
+            cancelLastParkingNotification(this)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -104,7 +105,11 @@ class ParkingService : Service() {
             isCollecting = true
             serviceScope.launch {
                 lastParkingFlow(applicationContext).collectLatest { last ->
-                    showLastParkingNotification(applicationContext, last)
+                    // 알림 OFF 상태에서는 서비스가 아직 완전히 종료되기 전이라도
+                    // 위치 Flow 갱신이 알림을 다시 살리면 안 된다.
+                    if (notificationEnabledFlow(applicationContext).first()) {
+                        showLastParkingNotification(applicationContext, last)
+                    }
                 }
             }
         }
@@ -137,6 +142,7 @@ class ParkingService : Service() {
 
         /** 서비스를 전경 서비스로 시작한다. (Android 8+는 startForegroundService 사용) */
         fun start(context: Context) {
+            if (!canShowParkingNotification(context)) return
             val intent = Intent(context, ParkingService::class.java)
             // startForegroundService로 시작하면, 서비스는 5초 내 startForeground를 호출해야 한다
             context.startForegroundService(intent)
@@ -151,6 +157,7 @@ class ParkingService : Service() {
         fun stop(context: Context) {
             // ACTION_STOP을 onStartCommand로 보내, 거기서 stopForeground+stopSelf로 확실히 종료.
             // (단순 stopService보다 결정적이고, 재게시/지연 코루틴 부활을 막기 좋다)
+            cancelLastParkingNotification(context)
             val intent = Intent(context, ParkingService::class.java).apply {
                 action = ACTION_STOP
             }

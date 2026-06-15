@@ -54,6 +54,8 @@ import java.util.Locale
 @Composable
 fun VoiceScreen(
     autoStartSignal: Long = 0L,
+    onRequestPhotoCapture: () -> Unit,
+    onOpenParkingDetail: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     //한번 정하면 못바꿈.
@@ -80,6 +82,8 @@ fun VoiceScreen(
         if (hasAudioPermission) {
             VoiceContent(
                 autoStartSignal = autoStartSignal,
+                onRequestPhotoCapture = onRequestPhotoCapture,
+                onOpenParkingDetail = onOpenParkingDetail,
                 modifier = Modifier.fillMaxSize()
             )
         } else {
@@ -117,6 +121,8 @@ private fun PermissionRequestVoice(
 @Composable
 private fun VoiceContent(
     autoStartSignal: Long = 0L,
+    onRequestPhotoCapture: () -> Unit,
+    onOpenParkingDetail: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -146,14 +152,19 @@ private fun VoiceContent(
     }
     // 권한이 방금 거부됐는지 — 안내 문구 노출용
     var notificationDenied by remember { mutableStateOf(false) }
+    var startNotificationServiceAfterPermission by remember { mutableStateOf(false) }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
         hasNotificationPermission = granted
         notificationDenied = !granted
-        // 권한을 얻은 직후라면 곧바로 알림 한 번 띄워준다
-        if (granted) showLastParkingNotification(context, lastParking)
+        // 권한을 얻은 직후에도 앱 내 알림 설정이 ON일 때만 전경 서비스를 시작한다.
+        // OFF 상태에서는 권한이 있어도 알림을 다시 살리면 안 된다.
+        if (granted && (notificationEnabled || startNotificationServiceAfterPermission)) {
+            ParkingService.start(context)
+        }
+        startNotificationServiceAfterPermission = false
     }
 
     // 인식 중 여부(버튼 비활성/로딩 표시용)와 인식 결과(사용자가 수정 가능)
@@ -161,6 +172,9 @@ private fun VoiceContent(
     var recognizedText by remember { mutableStateOf("") }
     // 마지막 시도가 실패/무결과였는지 — "다시 말하기" 안내 노출용
     var showRetryHint by remember { mutableStateOf(false) }
+    // 사진은 독립 기록이 아니라 방금 저장한 주차 위치에 붙는 보조 정보다.
+    // 그래서 항상 보이는 독립 사진 버튼 대신, 위치 저장이 끝난 직후에만 추가 여부를 묻는다.
+    var showPhotoPrompt by remember { mutableStateOf(false) }
 
     // ── SpeechRecognizer 생성 및 정리 ────────────────────────────────────
     // SpeechRecognizer는 시스템 자원(마이크/인식 서비스)에 연결되는 객체라,
@@ -225,6 +239,7 @@ private fun VoiceContent(
     // 듣기 시작: 인텐트로 한국어/자유 형식 인식을 요청
     val startListening = {
         showRetryHint = false
+        showPhotoPrompt = false
         recognizedText = ""
         isListening = true
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -257,6 +272,15 @@ private fun VoiceContent(
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        Text(
+            text = "내차기둥",
+            style = MaterialTheme.typography.headlineMedium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp, bottom = 16.dp)
+        )
+
         // ── 상단: 마지막 주차 위치 표시 ──────────────────────────────────
         Text(
             text = "마지막 주차 위치",
@@ -334,7 +358,10 @@ private fun VoiceContent(
         )
         OutlinedTextField(
             value = recognizedText,
-            onValueChange = { recognizedText = it },
+            onValueChange = {
+                recognizedText = it
+                showPhotoPrompt = false
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 56.dp, max = 200.dp),
@@ -350,9 +377,13 @@ private fun VoiceContent(
                     val saved = saveLastParking(context, recognizedText)
                     // DataStore에 저장해도 이미 떠 있는 알림은 자동으로 바뀌지 않으므로,
                     // 같은 알림 ID로 다시 notify해서 내용을 교체해야 한다.
-                    if (hasNotificationPermission) {
+                    // 단, 사용자가 상태바 알림 표시를 OFF로 둔 경우에는 저장 후 알림을 되살리지 않는다.
+                    if (notificationEnabled && hasNotificationPermission) {
                         showLastParkingNotification(context, saved)
                     }
+                    // 위치 저장이 완료된 뒤에만 사진 촬영을 제안한다.
+                    // 이렇게 해야 사진이 위치 없이 단독으로 저장되는 흐름을 만들지 않는다.
+                    showPhotoPrompt = true
                 }
             },
             enabled = recognizedText.isNotBlank(),
@@ -361,18 +392,47 @@ private fun VoiceContent(
             Text("저장")
         }
 
-        // 알림 띄우기(테스트) 버튼: 권한 있으면 바로 알림, 없으면 권한 요청
-        Button(
-            onClick = {
-                if (hasNotificationPermission) {
-                    showLastParkingNotification(context, lastParking)
-                } else {
-                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        if (showPhotoPrompt) {
+            Text(
+                text = "주차 위치가 저장되었어요.\n사진도 추가하시겠습니까?",
+                style = MaterialTheme.typography.titleMedium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp)
+            )
+            Row(
+                modifier = Modifier.padding(top = 8.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Button(
+                    onClick = {
+                        // [사진 촬영]을 누르면 카메라 전용 화면으로 넘어간다.
+                        // 촬영 화면은 파일 경로만 반환하고, MainActivity가 그 경로를 마지막 위치에 연결한다.
+                        showPhotoPrompt = false
+                        onRequestPhotoCapture()
+                    }
+                ) {
+                    Text("사진 촬영")
                 }
-            },
-            modifier = Modifier.padding(top = 12.dp)
+                Spacer(modifier = Modifier.width(8.dp))
+                Button(
+                    onClick = {
+                        // [괜찮아요]를 누르면 사진 없이 위치만 저장된 상태를 그대로 유지한다.
+                        showPhotoPrompt = false
+                    }
+                ) {
+                    Text("괜찮아요")
+                }
+            }
+        }
+
+        Button(
+            onClick = onOpenParkingDetail,
+            modifier = Modifier.padding(top = 16.dp)
         ) {
-            Text("알림 띄우기")
+            Text("저장된 주차 위치 보기")
         }
 
         // 권한이 거부된 경우 간단한 안내
@@ -389,6 +449,8 @@ private fun VoiceContent(
         }
 
         // ── 상태바 알림 표시 on/off 토글 ──────────────────────────────────
+        // 예전의 "알림 띄우기" 버튼은 테스트용 수동 경로라 제거한다.
+        // 상태바 알림 기능 자체는 앱의 기본 기능으로 유지하고, 이 스위치로만 on/off를 제어한다.
         // ON  → 설정 저장(true) 후 서비스 시작 → 저장된 마지막 위치로 알림 복원
         // OFF → 설정 저장(false) 후 서비스 정지 → 알림만 사라짐(위치 데이터는 그대로)
         Row(
@@ -399,7 +461,7 @@ private fun VoiceContent(
             horizontalArrangement = Arrangement.Center
         ) {
             Text(
-                text = "상태바 알림 표시",
+                text = "상태바에 주차 위치 표시",
                 style = MaterialTheme.typography.bodyLarge
             )
             Spacer(modifier = Modifier.width(12.dp))
@@ -411,8 +473,14 @@ private fun VoiceContent(
                         setNotificationEnabled(context, enabled)
                         // 2) 설정에 맞춰 서비스 시작/정지 (위치 데이터는 건드리지 않음)
                         if (enabled) {
-                            ParkingService.start(context)
+                            if (hasNotificationPermission) {
+                                ParkingService.start(context)
+                            } else {
+                                startNotificationServiceAfterPermission = true
+                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            }
                         } else {
+                            startNotificationServiceAfterPermission = false
                             ParkingService.stop(context)
                         }
                     }

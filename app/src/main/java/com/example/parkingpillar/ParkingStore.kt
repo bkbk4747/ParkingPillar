@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import java.io.File
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -25,6 +26,7 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 // 저장할 키 — 위치 데이터 (마지막 위치 텍스트 / 저장 시각)
 private val KEY_LOCATION_TEXT = stringPreferencesKey("location_text")
 private val KEY_SAVED_AT_MILLIS = longPreferencesKey("saved_at_millis")
+private val KEY_PHOTO_PATH = stringPreferencesKey("photo_path")
 
 // 상태바 알림 표시 on/off 설정 키.
 // 위치 데이터(위 두 키)와 "완전히 별개"다. 이 값을 바꿔도 위치 데이터는 그대로 유지된다.
@@ -34,6 +36,9 @@ private val KEY_NOTIFICATION_ENABLED = booleanPreferencesKey("notification_enabl
 data class LastParking(
     val text: String,
     val savedAtMillis: Long,
+    // 사진은 모든 위치 기록에 필수로 붙는 값이 아니다.
+    // 사용자가 위치만 저장하고 사진을 찍지 않을 수 있으므로 nullable 보조 정보로 둔다.
+    val photoPath: String? = null,
 )
 
 /**
@@ -51,9 +56,10 @@ fun lastParkingFlow(context: Context): Flow<LastParking?> =
         // prefs[키]는 값이 없으면 null을 반환한다.
         val text = prefs[KEY_LOCATION_TEXT]
         val savedAt = prefs[KEY_SAVED_AT_MILLIS]
+        val photoPath = prefs[KEY_PHOTO_PATH]
         // 둘 다 있을 때만 유효한 기록으로 간주
         if (text != null && savedAt != null) {
-            LastParking(text = text, savedAtMillis = savedAt)
+            LastParking(text = text, savedAtMillis = savedAt, photoPath = photoPath)
         } else {
             null
         }
@@ -72,12 +78,57 @@ suspend fun saveLastParking(context: Context, text: String): LastParking {
     val savedAtMillis = System.currentTimeMillis()
 
     context.dataStore.edit { prefs ->
+        val previousPhotoPath = prefs[KEY_PHOTO_PATH]
+        // 사진은 마지막 주차 기록에 붙는 보조 정보다.
+        // 새 위치를 저장할 때 photoPath만 지우면 내부 저장소의 실제 사진 파일은 남을 수 있으므로,
+        // 이전 위치에 붙어 있던 사진 파일도 안전하게 삭제를 시도한다.
+        deleteParkingPhotoIfInternal(context, previousPhotoPath)
+
         prefs[KEY_LOCATION_TEXT] = trimmedText
         // 저장 시각은 저장 시점의 현재 시간(epoch millis)
         prefs[KEY_SAVED_AT_MILLIS] = savedAtMillis
+        // 사진은 독립 기록이 아니라 "마지막 주차 위치"에 붙는 보조 정보다.
+        // 새 위치를 저장할 때 이전 위치의 사진 경로가 새 기록에 잘못 이어지지 않도록 초기화한다.
+        prefs.remove(KEY_PHOTO_PATH)
     }
 
     return LastParking(text = trimmedText, savedAtMillis = savedAtMillis)
+}
+
+/**
+ * 현재 저장된 마지막 주차 위치에 사진 경로를 붙인다.
+ *
+ * 사진은 위치 없이 단독으로 저장되는 기록이 아니라, 마지막 주차 위치(text/savedAtMillis)를
+ * 설명하는 보조 정보다. 그래서 기존 위치와 저장 시각은 그대로 유지하고 photoPath만 갱신한다.
+ * 저장된 위치가 없으면 사진을 연결할 대상이 없으므로 null을 반환해 안전하게 실패 처리한다.
+ */
+suspend fun attachPhotoToLastParking(context: Context, photoPath: String): LastParking? {
+    var updated: LastParking? = null
+
+    context.dataStore.edit { prefs ->
+        val text = prefs[KEY_LOCATION_TEXT]
+        val savedAt = prefs[KEY_SAVED_AT_MILLIS]
+        if (text == null || savedAt == null) {
+            updated = null
+            return@edit
+        }
+
+        val previousPhotoPath = prefs[KEY_PHOTO_PATH]
+        if (previousPhotoPath != null && previousPhotoPath != photoPath) {
+            // 같은 위치 기록에 새 사진을 붙이면 기존 사진은 더 이상 현재 기록의 사진이 아니다.
+            // 내부 저장소 파일이 계속 쌓이지 않도록 이전 사진 파일 삭제를 시도한다.
+            deleteParkingPhotoIfInternal(context, previousPhotoPath)
+        }
+
+        prefs[KEY_PHOTO_PATH] = photoPath
+        updated = LastParking(
+            text = text,
+            savedAtMillis = savedAt,
+            photoPath = photoPath
+        )
+    }
+
+    return updated
 }
 
 /**
@@ -102,5 +153,25 @@ fun notificationEnabledFlow(context: Context): Flow<Boolean> =
 suspend fun setNotificationEnabled(context: Context, enabled: Boolean) {
     context.dataStore.edit { prefs ->
         prefs[KEY_NOTIFICATION_ENABLED] = enabled
+    }
+}
+
+private fun deleteParkingPhotoIfInternal(context: Context, photoPath: String?) {
+    if (photoPath == null) return
+
+    try {
+        val photoDir = File(context.filesDir, "parking_photos").canonicalFile
+        val photoFile = File(photoPath).canonicalFile
+        val photoDirPath = photoDir.path
+        val photoFilePath = photoFile.path
+
+        // 삭제 대상은 앱 전용 내부 저장소의 parking_photos 폴더 안 파일로 제한한다.
+        // DataStore에 이상한 경로나 외부 경로가 들어가도 다른 파일을 지우지 않기 위한 안전장치다.
+        val isInsideParkingPhotoDir = photoFilePath.startsWith(photoDirPath + File.separator)
+        if (isInsideParkingPhotoDir && photoFile.isFile) {
+            photoFile.delete()
+        }
+    } catch (_: Exception) {
+        // 파일이 이미 없거나 경로 해석/삭제에 실패해도 위치 저장 흐름은 계속되어야 한다.
     }
 }

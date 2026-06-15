@@ -1,12 +1,16 @@
 package com.example.parkingpillar
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.core.app.NotificationManagerCompat
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -20,6 +24,13 @@ const val PARKING_NOTIFICATION_ID = 1001
 // 알림의 "말하기"로 앱을 열었음을 알리는 Intent extra 키.
 // MainActivity가 이 키를 읽어 true면 음성 인식을 자동 시작한다.
 const val EXTRA_AUTO_START_VOICE = "com.example.parkingpillar.AUTO_START_VOICE"
+
+fun canShowParkingNotification(context: Context): Boolean =
+    Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
 
 /**
  * 알림 채널을 생성한다.
@@ -162,6 +173,16 @@ fun buildParkingNotification(context: Context, last: LastParking?): Notification
 fun showLastParkingNotification(context: Context, last: LastParking?) {
     val notification = buildParkingNotification(context, last)
     NotificationManagerCompat.from(context).notify(PARKING_NOTIFICATION_ID, notification)
+}
+
+/**
+ * 마지막 주차 위치 알림을 명시적으로 제거한다.
+ *
+ * 상태바 알림 표시를 OFF로 바꿀 때는 Foreground Service를 멈추는 것과 별개로
+ * 같은 알림 ID를 cancel해서, 서비스 밖에서 직접 notify된 알림까지 확실히 내린다.
+ */
+fun cancelLastParkingNotification(context: Context) {
+    NotificationManagerCompat.from(context).cancel(PARKING_NOTIFICATION_ID)
 }
 
 /** 저장 시각(epoch millis)을 "3월 12일" 형식(날짜까지만) 문자열로 변환. */
