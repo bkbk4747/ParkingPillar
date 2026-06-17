@@ -25,8 +25,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardColors
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -270,64 +274,21 @@ private fun VoiceContent(
         modifier = modifier
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text(
-            text = "내차기둥",
-            style = MaterialTheme.typography.headlineMedium,
-            textAlign = TextAlign.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 8.dp, bottom = 16.dp)
+        HeaderSection()
+
+        LastParkingCard(
+            lastParking = lastParking,
+            isListening = isListening,
+            showRetryHint = showRetryHint,
+            recognizedText = recognizedText,
+            onStartListening = startListening
         )
 
-        // ── 상단: 마지막 주차 위치 표시 ──────────────────────────────────
-        Text(
-            text = "마지막 주차 위치",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 8.dp)
-        )
-        val last = lastParking
-        if (last != null) {
-            Text(
-                text = last.text,
-                style = MaterialTheme.typography.headlineMedium,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp)
-            )
-            Text(
-                text = formatSavedAt(last.savedAtMillis) + " 저장",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-        } else {
-            Text(
-                text = "아직 저장된 위치가 없어요",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 8.dp)
-            )
-        }
-
-        // 메인 버튼: 인식 중이 아닐 때만 누를 수 있음
-        Button(
-            onClick = startListening,
-            enabled = !isListening,
-            modifier = Modifier.padding(top = 24.dp)
-        ) {
-            Text(if (recognizedText.isBlank() && !showRetryHint) "기둥 위치를 말해보세요!" else "다시 말해주시겠어요?")
-        }
-
-        // 인식 중 상태 표시
         if (isListening) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center
             ) {
@@ -340,39 +301,23 @@ private fun VoiceContent(
             }
         }
 
-        // 실패/무결과 시 재시도 안내
         if (showRetryHint && !isListening) {
             Text(
                 text = "잘 못 들었어요. 다시 말하거나, 아래에 직접 입력해 주세요.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 16.dp)
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
             )
         }
 
-        // 인식 결과 — 항상 수정 가능한 입력칸으로 노출 (실패해도 빈 칸으로 보임)
-        Text(
-            text = "주차 위치 (직접 수정 가능)",
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(top = 24.dp, bottom = 8.dp)
-        )
-        OutlinedTextField(
-            value = recognizedText,
-            onValueChange = {
+        ManualInputCard(
+            recognizedText = recognizedText,
+            onRecognizedTextChange = {
                 recognizedText = it
                 showPhotoPrompt = false
             },
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 56.dp, max = 200.dp),
-            singleLine = false,
-            placeholder = { Text("예: B 구역 12번 기둥") }
-        )
-
-        // 저장 버튼: 입력칸이 비어있지 않을 때만 활성화.
-        // 저장은 suspend 함수라 코루틴 스코프에서 실행 → 끝나면 상단 표시가 Flow로 자동 갱신
-        Button(
-            onClick = {
+            onSave = {
                 scope.launch {
                     val saved = saveLastParking(context, recognizedText)
                     // DataStore에 저장해도 이미 떠 있는 알림은 자동으로 바뀌지 않으므로,
@@ -386,112 +331,272 @@ private fun VoiceContent(
                     showPhotoPrompt = true
                 }
             },
-            enabled = recognizedText.isNotBlank(),
-            modifier = Modifier.padding(top = 16.dp)
-        ) {
-            Text("저장")
-        }
+            onOpenParkingDetail = onOpenParkingDetail
+        )
 
         if (showPhotoPrompt) {
-            Text(
-                text = "주차 위치가 저장되었어요.\n사진도 추가하시겠습니까?",
-                style = MaterialTheme.typography.titleMedium,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp)
-            )
-            Row(
-                modifier = Modifier.padding(top = 8.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = parkingCardColors()
             ) {
-                Button(
-                    onClick = {
-                        // [사진 촬영]을 누르면 카메라 전용 화면으로 넘어간다.
-                        // 촬영 화면은 파일 경로만 반환하고, MainActivity가 그 경로를 마지막 위치에 연결한다.
-                        showPhotoPrompt = false
-                        onRequestPhotoCapture()
-                    }
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("사진 촬영")
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Button(
-                    onClick = {
-                        // [괜찮아요]를 누르면 사진 없이 위치만 저장된 상태를 그대로 유지한다.
-                        showPhotoPrompt = false
+                    Text(
+                        text = "주차 위치가 저장되었어요.\n사진도 추가하시겠습니까?",
+                        style = MaterialTheme.typography.titleMedium,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(
+                        modifier = Modifier.padding(top = 12.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Button(
+                            onClick = {
+                                // [사진 촬영]을 누르면 카메라 전용 화면으로 넘어간다.
+                                // 촬영 화면은 파일 경로만 반환하고, MainActivity가 그 경로를 마지막 위치에 연결한다.
+                                showPhotoPrompt = false
+                                onRequestPhotoCapture()
+                            }
+                        ) {
+                            Text("사진 촬영")
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        OutlinedButton(
+                            onClick = {
+                                // [괜찮아요]를 누르면 사진 없이 위치만 저장된 상태를 그대로 유지한다.
+                                showPhotoPrompt = false
+                            }
+                        ) {
+                            Text("괜찮아요")
+                        }
                     }
-                ) {
-                    Text("괜찮아요")
                 }
             }
         }
 
-        Button(
-            onClick = onOpenParkingDetail,
-            modifier = Modifier.padding(top = 16.dp)
-        ) {
-            Text("저장된 주차 위치 보기")
-        }
-
-        // 권한이 거부된 경우 간단한 안내
         if (notificationDenied) {
             Text(
                 text = "알림 권한이 꺼져 있어요. 설정에서 알림 권한을 켜주세요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp)
+                modifier = Modifier.fillMaxWidth()
             )
         }
 
-        // ── 상태바 알림 표시 on/off 토글 ──────────────────────────────────
-        // 예전의 "알림 띄우기" 버튼은 테스트용 수동 경로라 제거한다.
-        // 상태바 알림 기능 자체는 앱의 기본 기능으로 유지하고, 이 스위치로만 on/off를 제어한다.
-        // ON  → 설정 저장(true) 후 서비스 시작 → 저장된 마지막 위치로 알림 복원
-        // OFF → 설정 저장(false) 후 서비스 정지 → 알림만 사라짐(위치 데이터는 그대로)
+        NotificationSettingCard(
+            notificationEnabled = notificationEnabled,
+            onNotificationEnabledChange = { enabled ->
+                scope.launch {
+                    // 1) 설정값을 먼저 저장 (앱 재실행/부팅 후에도 선택 유지)
+                    setNotificationEnabled(context, enabled)
+                    // 2) 설정에 맞춰 서비스 시작/정지 (위치 데이터는 건드리지 않음)
+                    if (enabled) {
+                        if (hasNotificationPermission) {
+                            ParkingService.start(context)
+                        } else {
+                            startNotificationServiceAfterPermission = true
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    } else {
+                        startNotificationServiceAfterPermission = false
+                        ParkingService.stop(context)
+                    }
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun HeaderSection() {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.Start
+    ) {
+        Text(
+            text = "내차기둥",
+            style = MaterialTheme.typography.headlineMedium
+        )
+        Text(
+            text = "주차 위치를 쉽게 저장하고, 잊지 않게 알려드려요",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+    }
+}
+
+@Composable
+private fun LastParkingCard(
+    lastParking: LastParking?,
+    isListening: Boolean,
+    showRetryHint: Boolean,
+    recognizedText: String,
+    onStartListening: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = parkingCardColors()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            if (lastParking == null) {
+                Text(
+                    text = "🅿️ 아직 저장된 주차 위치가 없어요",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text = "음성으로 주차 위치를 기록해 보세요",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+            } else {
+                Text(
+                    text = "🅿️ 마지막 주차 위치",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = lastParking.text,
+                    style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+                Text(
+                    text = formatSavedAt(lastParking.savedAtMillis),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+
+            Button(
+                onClick = onStartListening,
+                enabled = !isListening,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 18.dp)
+            ) {
+                Text(
+                    if (recognizedText.isBlank() && !showRetryHint) {
+                        "🎙 기둥 위치를 말해보세요!"
+                    } else {
+                        "🎙 다시 말해주시겠어요?"
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ManualInputCard(
+    recognizedText: String,
+    onRecognizedTextChange: (String) -> Unit,
+    onSave: () -> Unit,
+    onOpenParkingDetail: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = parkingCardColors()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Text(
+                text = "주차 위치 직접 수정 가능",
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = "음성 인식 결과를 직접 수정할 수 있어요",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            OutlinedTextField(
+                value = recognizedText,
+                onValueChange = onRecognizedTextChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 56.dp, max = 200.dp)
+                    .padding(top = 12.dp),
+                singleLine = false,
+                placeholder = { Text("예: 지하 2층 D2") }
+            )
+            Button(
+                onClick = onSave,
+                enabled = recognizedText.isNotBlank(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp)
+            ) {
+                Text("저장")
+            }
+            OutlinedButton(
+                onClick = onOpenParkingDetail,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+            ) {
+                Text("주차 위치 자세히 보기")
+            }
+        }
+    }
+}
+
+@Composable
+private fun NotificationSettingCard(
+    notificationEnabled: Boolean,
+    onNotificationEnabledChange: (Boolean) -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = parkingCardColors()
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 24.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "상태바에 주차 위치 표시",
-                style = MaterialTheme.typography.bodyLarge
-            )
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = "상태바에 주차 위치 표시",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text = "알림창에서 주차 위치를 항상 확인할 수 있어요!",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
             Spacer(modifier = Modifier.width(12.dp))
             Switch(
                 checked = notificationEnabled,
-                onCheckedChange = { enabled ->
-                    scope.launch {
-                        // 1) 설정값을 먼저 저장 (앱 재실행/부팅 후에도 선택 유지)
-                        setNotificationEnabled(context, enabled)
-                        // 2) 설정에 맞춰 서비스 시작/정지 (위치 데이터는 건드리지 않음)
-                        if (enabled) {
-                            if (hasNotificationPermission) {
-                                ParkingService.start(context)
-                            } else {
-                                startNotificationServiceAfterPermission = true
-                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                            }
-                        } else {
-                            startNotificationServiceAfterPermission = false
-                            ParkingService.stop(context)
-                        }
-                    }
-                }
+                onCheckedChange = onNotificationEnabledChange
             )
         }
     }
 }
 
-/** 저장 시각(epoch millis)을 "3월 12일 오후 3:05" 형식의 한국어 문자열로 변환한다. */
+@Composable
+private fun parkingCardColors(): CardColors =
+    CardDefaults.cardColors(
+        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        contentColor = MaterialTheme.colorScheme.onSurface
+    )
+
+/** 저장 시각(epoch millis)을 "06/16 02:48에 주차하셨어요!" 형식의 문자열로 변환한다. */
 private fun formatSavedAt(millis: Long): String {
-    val formatter = SimpleDateFormat("M월 d일 a h:mm", Locale.KOREAN)
-    return formatter.format(Date(millis))
+    val formatter = SimpleDateFormat("MM/dd HH:mm", Locale.KOREAN)
+    return "${formatter.format(Date(millis))}에 주차하셨어요!"
 }
