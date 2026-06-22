@@ -11,6 +11,10 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,8 +27,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardColors
 import androidx.compose.material3.CardDefaults
@@ -32,6 +38,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -46,7 +53,17 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -54,6 +71,22 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+private object ParkingUiColors {
+    val AppBackground = Color(0xFF05070D)
+    val CardBackground = Color(0xFF101522)
+    val CardBackgroundAlt = Color(0xFF0D1320)
+    val CardBorder = Color(0xFF25375C)
+    val InputBackground = Color(0xFF0F1522)
+    val InputBorder = Color(0xFF242A36)
+    val InputFocusedBorder = Color(0xFF2F7BFF)
+    val PrimaryBlue = Color(0xFF1E6BFF)
+    val PrimaryBlueSoft = Color(0xFF6EA8FF)
+    val DeepBlue = Color(0xFF10224A)
+    val IconBlue = Color(0xFFB8D4FF)
+    val TextPrimary = Color(0xFFF8FAFC)
+    val TextSecondary = Color(0xFF9CA3AF)
+}
 
 @Composable
 fun VoiceScreen(
@@ -272,6 +305,7 @@ private fun VoiceContent(
 
     Column(
         modifier = modifier
+            .background(ParkingUiColors.AppBackground)
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -420,12 +454,14 @@ private fun HeaderSection() {
     ) {
         Text(
             text = "내차기둥",
-            style = MaterialTheme.typography.headlineMedium
+            style = MaterialTheme.typography.headlineMedium,
+            color = ParkingUiColors.TextPrimary,
+            fontWeight = FontWeight.Bold
         )
         Text(
             text = "주차 위치를 쉽게 저장하고, 잊지 않게 알려드려요",
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = ParkingUiColors.TextSecondary,
             modifier = Modifier.padding(top = 4.dp)
         )
     }
@@ -441,39 +477,75 @@ private fun LastParkingCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = parkingCardColors()
+        colors = parkingCardColors(),
+        shape = RoundedCornerShape(26.dp),
+        border = parkingCardBorder()
     ) {
         Column(
-            modifier = Modifier.padding(16.dp)
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp)
         ) {
-            if (lastParking == null) {
-                Text(
-                    text = "🅿️ 아직 저장된 주차 위치가 없어요",
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Text(
-                    text = "음성으로 주차 위치를 기록해 보세요",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 6.dp)
-                )
-            } else {
-                Text(
-                    text = "🅿️ 마지막 주차 위치",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = lastParking.text,
-                    style = MaterialTheme.typography.headlineMedium,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-                Text(
-                    text = formatSavedAt(lastParking.savedAtMillis),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    if (lastParking == null) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            ParkingBadge()
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "아직 저장된 주차 위치가 없어요",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = ParkingUiColors.TextPrimary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Text(
+                            text = "음성으로 주차 위치를 기록해 보세요",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = ParkingUiColors.TextSecondary,
+                            modifier = Modifier.padding(top = 6.dp)
+                        )
+                    } else {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            ParkingBadge()
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "마지막 주차 위치",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = ParkingUiColors.TextSecondary
+                            )
+                        }
+                        Text(
+                            text = lastParking.text,
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = ParkingUiColors.TextPrimary,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(top = 6.dp)
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(top = 4.dp)
+                        ) {
+                            ClockIcon(
+                                color = ParkingUiColors.TextSecondary,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = formatSavedAt(lastParking.savedAtMillis),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = ParkingUiColors.TextSecondary,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                ParkingPinIllustration()
             }
 
             Button(
@@ -481,18 +553,61 @@ private fun LastParkingCard(
                 enabled = !isListening,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 18.dp)
-            ) {
-                Text(
-                    if (recognizedText.isBlank() && !showRetryHint) {
-                        "🎙 기둥 위치를 말해보세요!"
-                    } else {
-                        "🎙 다시 말해주시겠어요?"
-                    }
+                    .padding(top = 12.dp),
+                shape = RoundedCornerShape(18.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = ParkingUiColors.PrimaryBlue,
+                    contentColor = Color.White,
+                    disabledContainerColor = ParkingUiColors.CardBorder,
+                    disabledContentColor = ParkingUiColors.TextSecondary
                 )
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    MicIcon(
+                        color = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("주차 위치를 말해보세요")
+                }
             }
         }
     }
+}
+
+@Composable
+private fun ParkingBadge() {
+    Box(
+        modifier = Modifier
+            .size(28.dp)
+            .background(
+                color = ParkingUiColors.PrimaryBlue,
+                shape = RoundedCornerShape(9.dp)
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = "P",
+            style = MaterialTheme.typography.titleMedium,
+            color = Color.White,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+@Composable
+private fun ParkingPinIllustration() {
+    Image(
+        painter = painterResource(id = R.drawable.parking_pin_map),
+        contentDescription = null,
+        modifier = Modifier
+            .size(width = 96.dp, height = 140.dp)
+            .alpha(0.95f),
+        contentScale = ContentScale.Fit
+    )
 }
 
 @Composable
@@ -504,20 +619,18 @@ private fun ManualInputCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = parkingCardColors()
+        colors = parkingCardColors(),
+        shape = RoundedCornerShape(22.dp),
+        border = parkingCardBorder()
     ) {
         Column(
             modifier = Modifier.padding(16.dp)
         ) {
             Text(
-                text = "주차 위치 직접 수정 가능",
-                style = MaterialTheme.typography.titleMedium
-            )
-            Text(
-                text = "음성 인식 결과를 직접 수정할 수 있어요",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp)
+                text = "주차 위치 (직접 수정 가능)",
+                style = MaterialTheme.typography.titleMedium,
+                color = ParkingUiColors.TextPrimary,
+                fontWeight = FontWeight.Bold
             )
             OutlinedTextField(
                 value = recognizedText,
@@ -527,14 +640,49 @@ private fun ManualInputCard(
                     .heightIn(min = 56.dp, max = 200.dp)
                     .padding(top = 12.dp),
                 singleLine = false,
-                placeholder = { Text("예: 지하 2층 D2") }
+                shape = RoundedCornerShape(16.dp),
+                placeholder = { Text("예: 지하 2층 D2") },
+                leadingIcon = {
+                    PlaceIcon(
+                        color = ParkingUiColors.TextSecondary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                },
+                trailingIcon = {
+                    EditPencilIcon(
+                        color = ParkingUiColors.TextSecondary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = ParkingUiColors.TextPrimary,
+                    unfocusedTextColor = ParkingUiColors.TextPrimary,
+                    focusedBorderColor = ParkingUiColors.InputFocusedBorder,
+                    unfocusedBorderColor = ParkingUiColors.InputBorder,
+                    focusedContainerColor = ParkingUiColors.InputBackground,
+                    unfocusedContainerColor = ParkingUiColors.InputBackground,
+                    cursorColor = ParkingUiColors.PrimaryBlue,
+                    focusedPlaceholderColor = ParkingUiColors.TextSecondary,
+                    unfocusedPlaceholderColor = ParkingUiColors.TextSecondary,
+                    focusedLeadingIconColor = ParkingUiColors.TextSecondary,
+                    unfocusedLeadingIconColor = ParkingUiColors.TextSecondary,
+                    focusedTrailingIconColor = ParkingUiColors.TextSecondary,
+                    unfocusedTrailingIconColor = ParkingUiColors.TextSecondary
+                )
             )
             Button(
                 onClick = onSave,
                 enabled = recognizedText.isNotBlank(),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 12.dp)
+                    .padding(top = 12.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = ParkingUiColors.PrimaryBlue,
+                    contentColor = Color.White,
+                    disabledContainerColor = ParkingUiColors.CardBorder,
+                    disabledContentColor = ParkingUiColors.TextSecondary
+                )
             ) {
                 Text("저장")
             }
@@ -542,9 +690,24 @@ private fun ManualInputCard(
                 onClick = onOpenParkingDetail,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 8.dp)
+                    .padding(top = 8.dp),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, ParkingUiColors.PrimaryBlue.copy(alpha = 0.75f)),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = ParkingUiColors.PrimaryBlueSoft
+                )
             ) {
-                Text("주차 위치 자세히 보기")
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    EyeIcon(
+                        color = ParkingUiColors.PrimaryBlueSoft,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("주차 위치 자세히 보기")
+                }
             }
         }
     }
@@ -557,7 +720,9 @@ private fun NotificationSettingCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = parkingCardColors()
+        colors = parkingCardColors(),
+        shape = RoundedCornerShape(22.dp),
+        border = parkingCardBorder()
     ) {
         Row(
             modifier = Modifier
@@ -565,17 +730,34 @@ private fun NotificationSettingCard(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .background(
+                        color = ParkingUiColors.DeepBlue,
+                        shape = RoundedCornerShape(21.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                BellIcon(
+                    color = ParkingUiColors.IconBlue,
+                    modifier = Modifier.size(21.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
             Column(
                 modifier = Modifier.weight(1f)
             ) {
                 Text(
                     text = "상태바에 주차 위치 표시",
-                    style = MaterialTheme.typography.titleMedium
+                    style = MaterialTheme.typography.titleMedium,
+                    color = ParkingUiColors.TextPrimary,
+                    fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "알림창에서 주차 위치를 항상 확인할 수 있어요!",
+                    text = "주차 후 상태바에서 위치를 바로 확인할 수 있어요",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = ParkingUiColors.TextSecondary,
                     modifier = Modifier.padding(top = 4.dp)
                 )
             }
@@ -589,11 +771,251 @@ private fun NotificationSettingCard(
 }
 
 @Composable
+private fun ClockIcon(
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    Canvas(modifier = modifier) {
+        val strokeWidth = size.minDimension * 0.12f
+        val stroke = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+        val centerPoint = Offset(size.width / 2f, size.height / 2f)
+
+        drawCircle(
+            color = color,
+            radius = size.minDimension * 0.42f,
+            center = centerPoint,
+            style = stroke
+        )
+        drawLine(
+            color = color,
+            start = centerPoint,
+            end = Offset(centerPoint.x, centerPoint.y - size.minDimension * 0.22f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = color,
+            start = centerPoint,
+            end = Offset(centerPoint.x + size.minDimension * 0.18f, centerPoint.y + size.minDimension * 0.10f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round
+        )
+    }
+}
+
+@Composable
+private fun MicIcon(
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    Canvas(modifier = modifier) {
+        val strokeWidth = size.minDimension * 0.10f
+        val stroke = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+        val width = size.width
+        val height = size.height
+
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(width * 0.34f, height * 0.08f),
+            size = Size(width * 0.32f, height * 0.46f),
+            cornerRadius = CornerRadius(width * 0.16f, width * 0.16f),
+            style = stroke
+        )
+        drawArc(
+            color = color,
+            startAngle = 30f,
+            sweepAngle = 120f,
+            useCenter = false,
+            topLeft = Offset(width * 0.22f, height * 0.28f),
+            size = Size(width * 0.56f, height * 0.46f),
+            style = stroke
+        )
+        drawLine(
+            color = color,
+            start = Offset(width * 0.50f, height * 0.74f),
+            end = Offset(width * 0.50f, height * 0.90f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = color,
+            start = Offset(width * 0.35f, height * 0.90f),
+            end = Offset(width * 0.65f, height * 0.90f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round
+        )
+    }
+}
+
+@Composable
+private fun EyeIcon(
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    Canvas(modifier = modifier) {
+        val strokeWidth = size.minDimension * 0.10f
+        drawOval(
+            color = color,
+            topLeft = Offset(size.width * 0.08f, size.height * 0.28f),
+            size = Size(size.width * 0.84f, size.height * 0.44f),
+            style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+        )
+        drawCircle(
+            color = color,
+            radius = size.minDimension * 0.14f,
+            center = Offset(size.width * 0.50f, size.height * 0.50f)
+        )
+    }
+}
+
+@Composable
+private fun EditPencilIcon(
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    Canvas(modifier = modifier) {
+        val strokeWidth = size.minDimension * 0.09f
+        val stroke = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+        drawLine(
+            color = color,
+            start = Offset(size.width * 0.22f, size.height * 0.76f),
+            end = Offset(size.width * 0.70f, size.height * 0.28f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = color,
+            start = Offset(size.width * 0.34f, size.height * 0.84f),
+            end = Offset(size.width * 0.82f, size.height * 0.36f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = color,
+            start = Offset(size.width * 0.62f, size.height * 0.20f),
+            end = Offset(size.width * 0.82f, size.height * 0.40f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = color,
+            start = Offset(size.width * 0.18f, size.height * 0.86f),
+            end = Offset(size.width * 0.36f, size.height * 0.82f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round
+        )
+        drawRoundRect(
+            color = color.copy(alpha = 0.22f),
+            topLeft = Offset(size.width * 0.08f, size.height * 0.86f),
+            size = Size(size.width * 0.22f, size.height * 0.05f),
+            cornerRadius = CornerRadius(8f, 8f),
+            style = stroke
+        )
+    }
+}
+
+@Composable
+private fun PlaceIcon(
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    Canvas(modifier = modifier) {
+        val strokeWidth = size.minDimension * 0.09f
+        val stroke = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+        val centerPoint = Offset(size.width * 0.50f, size.height * 0.34f)
+        drawCircle(
+            color = color,
+            radius = size.minDimension * 0.23f,
+            center = centerPoint,
+            style = stroke
+        )
+        drawCircle(
+            color = color,
+            radius = size.minDimension * 0.075f,
+            center = centerPoint
+        )
+        drawLine(
+            color = color,
+            start = Offset(size.width * 0.36f, size.height * 0.54f),
+            end = Offset(size.width * 0.50f, size.height * 0.90f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = color,
+            start = Offset(size.width * 0.64f, size.height * 0.54f),
+            end = Offset(size.width * 0.50f, size.height * 0.90f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round
+        )
+    }
+}
+
+@Composable
+private fun BellIcon(
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    Canvas(modifier = modifier) {
+        val strokeWidth = size.minDimension * 0.09f
+        val stroke = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+        val width = size.width
+        val height = size.height
+
+        drawLine(
+            color = color,
+            start = Offset(width * 0.50f, height * 0.12f),
+            end = Offset(width * 0.50f, height * 0.18f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round
+        )
+        drawArc(
+            color = color,
+            startAngle = 190f,
+            sweepAngle = 160f,
+            useCenter = false,
+            topLeft = Offset(width * 0.22f, height * 0.18f),
+            size = Size(width * 0.56f, height * 0.56f),
+            style = stroke
+        )
+        drawLine(
+            color = color,
+            start = Offset(width * 0.28f, height * 0.46f),
+            end = Offset(width * 0.28f, height * 0.68f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = color,
+            start = Offset(width * 0.72f, height * 0.46f),
+            end = Offset(width * 0.72f, height * 0.68f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = color,
+            start = Offset(width * 0.22f, height * 0.70f),
+            end = Offset(width * 0.78f, height * 0.70f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round
+        )
+        drawCircle(
+            color = color,
+            radius = size.minDimension * 0.065f,
+            center = Offset(width * 0.50f, height * 0.83f)
+        )
+    }
+}
+
+@Composable
 private fun parkingCardColors(): CardColors =
     CardDefaults.cardColors(
-        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-        contentColor = MaterialTheme.colorScheme.onSurface
+        containerColor = ParkingUiColors.CardBackground,
+        contentColor = ParkingUiColors.TextPrimary
     )
+
+private fun parkingCardBorder(): BorderStroke =
+    BorderStroke(1.dp, ParkingUiColors.CardBorder.copy(alpha = 0.58f))
 
 /** 저장 시각(epoch millis)을 "06/16 02:48에 주차하셨어요!" 형식의 문자열로 변환한다. */
 private fun formatSavedAt(millis: Long): String {
